@@ -1,6 +1,9 @@
 game = require('./game')
 und = require('underscore')
 
+defensiveThreshold = 1
+offensiveThreshold = 1
+
 directionsEnum = 
   north: 1
   east: 2
@@ -55,22 +58,33 @@ doPassCards = (round) ->
 
 doPlayCard = (trick) ->
   thisGame = trick.round.game
+  me = thisGame.info.position
+  
   # evaluate each player
+  
   # find two top players
   sortable = []
   for key of thisGame.score
     sortable.push([key, thisGame.score[key]])
   sortable.sort (a, b) -> 
     a[1] - b[1]
+
+  firstPlacePlayer = sortable[0]
+  secondPlacePlayer = sortable[1]
+
   # find leading edge
-  leadingEdge = sortable[0][1] - sortable[1][1]
-  # if leader is me then
-    # if leading edge is greater than defensive threshhold
+  leadingEdge = Math.abs(firstPlacePlayer[1] - secondPlacePlayer[1])
+  trick.log "Leading edge:", leadingEdge
+  
+  if firstPlacePlayer[0] is me
+    if leadingEdge >= defensiveThreshold
       # paranoid
-  # else
-    # if leading edge greater than offensive threshhold
+      return
+  else
+    if leadingEdge >= offensiveThreshold
       # offensive
-  # otherwise, maxN
+      return
+  # maxN
 
   trick.log "Current trick:", trick.played
   cardToPlay = playableCards(trick)[0]
