@@ -1,0 +1,12 @@
+{
+  "name": "agentvsagent-sample",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "coffee-script": "1.4.x",
+    "thrift": "0.9.1",
+    "node-int64": "0.3.x",
+    "underscore": "1.4.x"
+  }
+}
+
