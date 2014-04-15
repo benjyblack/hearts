@@ -1,6 +1,47 @@
 thrift = require('thrift')
 Hearts = require('./lib/Hearts')
 types = require('./lib/hearts_types')
+und = require('underscore')
+_ = require('lodash')
+
+games = []
+
+directionToNum = 
+  north : 0
+  east : 1
+  south : 2
+  west : 3
+
+numToDirection =
+  0 : "north"
+  1 : "east"
+  2 : "south"
+  3 : "west"
+
+resultOfTrick = (trick) ->
+  # get lead suit
+  suit = trick.played[0].suit
+  leaderAsNum = directionToNum[trick.leader]
+
+  # get who won and tally up all the points
+  highestCard = trick.played[0]
+  winningDirectionAsNum = leaderAsNum
+  pointsForTrick = 0
+
+  for card, i in trick.played
+    pointsForTrick++ if card.suit is types.Suit.HEARTS
+    pointsForTrick += 13 if card.suit is types.Suit.SPADES and card.rank is types.Rank.QUEEN
+
+    if card.rank > highestCard.rank and card.suit is suit
+      highestCard = card
+      winningDirectionAsNum = (i + leaderAsNum) % 4;
+
+  winnerAsDirection = numToDirection[winningDirectionAsNum]
+
+  return {
+    winner: winnerAsDirection
+    points: pointsForTrick
+  }
 
 class Trick
   constructor: (@number, @round, @options) ->
@@ -92,16 +133,6 @@ class Game
       east: 0
       south: 0
       west: 0
-    @numToDirection = 
-      0 : "north"
-      1 : "east"
-      2 : "south"
-      3 : "west"
-    @directionToNum = 
-      north : 0
-      east : 1
-      south : 2
-      west : 3
 
   createRound: ->
     roundNumber = @rounds.length + 1
@@ -124,29 +155,10 @@ class Game
           @run(callback)
 
   updateScore: (trick) ->
-    # get lead suit
-    suit = trick.played[0].suit
-    leaderAsNum = @directionToNum[trick.leader]
-  
-    # get who won and tally up all the points
-    highestCard = trick.played[0]
-    winningDirectionAsNum = leaderAsNum
-    pointsForTrick = 0
-
-    for card, i in trick.played
-      pointsForTrick++ if card.suit is types.Suit.HEARTS
-      pointsForTrick += 13 if card.suit is types.Suit.SPADES and card.rank is types.Rank.QUEEN
-
-      if card.rank > highestCard.rank and card.suit is suit
-        highestCard = card
-        winningDirectionAsNum = (i + leaderAsNum) % 4;
-  
-    winnerAsDirection = @numToDirection[winningDirectionAsNum]
-
-    debugger if typeof winnerAsDirection is 'undefined'
+    result = resultOfTrick trick
 
     # allocate points
-    @score[winnerAsDirection] += pointsForTrick
+    @score[trick.winner] += trick.points
     
     @score
 
@@ -156,36 +168,54 @@ class Game
 exports.play = (passCardsFn, playCardFn) ->
   host = process.env.AVA_HOST || '127.0.0.1'
   port = process.env.AVA_PORT || 4001
-  transport = thrift.TFramedTransport
-  connection = thrift.createConnection(host, port, {transport: transport})
-  client = thrift.createClient(Hearts, connection)
+  
+  for i in [1..3]
+    transport = thrift.TFramedTransport
+    connection = thrift.createConnection(host, port, {transport: transport})
+    client = thrift.createClient(Hearts, connection)
 
-  request = new types.EntryRequest()
-  console.log "Entering arena", request
-  client.enter_arena request, (err, response) =>
-    throw err if err
-    ticket = response.ticket
-    if ticket
-      console.log "playing"
-      client.get_game_info ticket, (err, gameInfo) =>
-        throw err if err
-        console.log "game info:", gameInfo
+    request = new types.EntryRequest()
+    console.log "Entering arena", request
+    client.enter_arena request, (err, response) =>
+      throw err if err
+      ticket = response.ticket
+      if ticket
+        console.log "playing"
+        client.get_game_info ticket, (err, gameInfo) =>
+          throw err if err
+          console.log "game info:", gameInfo
 
-        game = new Game gameInfo,
-          ticket: ticket
-          client: client
-          passCardsFn: passCardsFn
-          playCardFn: playCardFn
+          game = new Game gameInfo,
+            ticket: ticket
+            client: client
+            passCardsFn: passCardsFn
+            playCardFn: playCardFn
 
-        game.run =>
-          console.log "Game is over"
-          client.get_game_result ticket, (err, gameResult) ->
-            throw err if err
-            console.log "game result:", gameResult
-            connection.end()
-    else
-      console.log "No ticket"
-      connection.end()
+          games.push game
+
+          game.run =>
+            console.log "Game is over"
+            client.get_game_result ticket, (err, gameResult) ->
+              throw err if err
+              console.log "game result:", gameResult
+              connection.end()
+      else
+        console.log "No ticket"
+        connection.end()
+
+exports.getOpponentsTrick = (opponent) =>
+  for game in games
+    numRounds = game.rounds.length-1
+    numTricksInRound = game.rounds[numRounds].tricks.length-1
+    return _.cloneDeep(game.rounds[numRounds].tricks[numTricksInRound]) if game.info.position is opponent
+
+  return -1
+
+exports.numToDirection = numToDirection
+
+exports.directionToNum = directionToNum
+
+exports.resultOfTrick = resultOfTrick; 
 
 exports.Suit = types.Suit
 exports.Rank = types.Rank
